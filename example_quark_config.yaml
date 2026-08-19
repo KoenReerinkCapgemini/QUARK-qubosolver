@@ -1,0 +1,4 @@
+plugins: ["src.PLUGIN_QUBOSolver_FORMATTED"]
+
+pipeline:
+  - "qubo_solver"

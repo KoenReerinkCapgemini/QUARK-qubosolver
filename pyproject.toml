@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=64", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
+# can be empty if no extra settings are needed, presence enables setuptools-scm
+
+[project.urls]
+Homepage = "PLUGIN_HOMEPAGE"
+
+[project]
+name = "PLUGIN_NAME"
+dynamic = ["version"]
+readme = "README.md"
+requires-python = ">=3.12"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = "Apache-2.0"
+dependencies = ["quark-framework>=0.4.4"]
