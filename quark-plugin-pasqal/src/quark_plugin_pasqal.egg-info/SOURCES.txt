@@ -1,0 +1,10 @@
+LICENSE
+README.md
+pyproject.toml
+src/quark_plugin_pasqal/__init__.py
+src/quark_plugin_pasqal/solver.py
+src/quark_plugin_pasqal.egg-info/PKG-INFO
+src/quark_plugin_pasqal.egg-info/SOURCES.txt
+src/quark_plugin_pasqal.egg-info/dependency_links.txt
+src/quark_plugin_pasqal.egg-info/requires.txt
+src/quark_plugin_pasqal.egg-info/top_level.txt

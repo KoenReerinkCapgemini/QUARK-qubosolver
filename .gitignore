@@ -1,0 +1,10 @@
+# Virtual environments
+.venv/
+venv/
+
+# Byte-compiled files
+__pycache__/
+*.py[cod]
+
+# macOS
+.DS_Store
