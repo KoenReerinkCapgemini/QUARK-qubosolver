@@ -1,0 +1,19 @@
+# Requirements to run quark-plugin-lp-to-qubo/test_lp_to_qubo.ipynb
+# Covers QUARK-framework's quark.core / quark.interface_types modules
+# and the quark_plugin_lp_to_qubo converter, both loaded via sys.path (not pip-installed).
+
+# QUARK-framework runtime deps (imported transitively via quark.interface_types)
+anytree>=2.13.0
+inquirer>=3.4.0
+matplotlib>=3.10.1
+networkx>=3.4.2
+notebook>=7.4.4
+packaging>=24.2
+pyyaml>=6.0.2
+
+# quark-plugin-lp-to-qubo runtime deps
+qiskit-optimization>=0.6.0
+numpy>=1.21.0
+
+# Notebook execution
+ipykernel>=6.29.0

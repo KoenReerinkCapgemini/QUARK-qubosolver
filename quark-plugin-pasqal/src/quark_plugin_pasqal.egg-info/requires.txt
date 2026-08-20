@@ -1,0 +1,8 @@
+pulser>=1.0.0
+pulser-simulation>=1.0.0
+scipy>=1.7.0
+numpy>=1.21.0
+
+[dev]
+pytest>=7.0
+pytest-cov>=4.0
