@@ -34,9 +34,10 @@ class LpToQuboConverter(Core):
         penalty_factor: float = 1e6,
         continuous_var_precision: int = 8,
         discretisation_scale: float = 1.0,
+        path_to_lp: str | Path | None = None,
     ):
         """Initialize the LP to QUBO converter.
-        
+        :param path_to_lp: Optional path to the LP file to convert. When omitted, the LP is read from the input data.
         :param penalty_factor: Multiplier for constraint penalty terms in the objective.
             Larger values enforce constraint satisfaction more strictly. Default 1e6.
         :param continuous_var_precision: Number of bits to use for binary discretisation
@@ -45,6 +46,7 @@ class LpToQuboConverter(Core):
         :param discretisation_scale: Scale factor for discretised variable bounds.
             Default 1.0 (no scaling).
         """
+        self.path_to_lp = path_to_lp
         self.penalty_factor = penalty_factor
         self.continuous_var_precision = continuous_var_precision
         self.discretisation_scale = discretisation_scale
@@ -60,6 +62,12 @@ class LpToQuboConverter(Core):
         :return: Data(Qubo) on success, Failed(...) on error
         """
         start_time = time.time()
+
+        if self.path_to_lp is not None:
+            try:
+                data = LP.from_file(self.path_to_lp)
+            except OSError as e:
+                return Failed(reason=f"Failed to read LP file '{self.path_to_lp}': {e}")
 
         if not isinstance(data, LP):
             return Failed(reason=f"Expected LP, got {type(data).__name__}")
