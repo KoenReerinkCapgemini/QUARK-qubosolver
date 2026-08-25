@@ -118,12 +118,14 @@ class QuboToPasqal(Core):
                 ("".join(str(int(bit)) for bit in bits), float(probability))
                 for bits, probability in zip(bitstrings, probabilities.tolist())
             ]
+        if counts is None and probabilities is None and len(bitstrings) == 1:
+            return [("".join(str(int(bit)) for bit in bitstrings[0]), 1.0)]
         raise ValueError("solver result contains neither matching counts nor probabilities")
 
     @staticmethod
     def _shot_count(solution: Any) -> int:
         if solution.counts is None:
-            return 0
+            return 1 if solution.probabilities is None else 0
         return int(solution.counts.sum().item())
 
     def _solver_mode(self) -> str:

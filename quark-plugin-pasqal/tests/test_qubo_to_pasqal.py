@@ -29,6 +29,20 @@ def test_postprocess_converts_counts_to_sample_distribution() -> None:
     assert result.data.nbshots == 5
 
 
+def test_postprocess_converts_deterministic_solution() -> None:
+    solution = SimpleNamespace(
+        bitstrings=torch.tensor([[0, 0]], dtype=torch.int32),
+        counts=None,
+        probabilities=None,
+    )
+
+    result = QuboToPasqal().postprocess(Data(solution))
+
+    assert isinstance(result, Data)
+    assert result.data.as_list() == [("00", 1.0)]
+    assert result.data.nbshots == 1
+
+
 def test_invalid_input_returns_failed() -> None:
     result = QuboToPasqal().preprocess("not a qubo")
 

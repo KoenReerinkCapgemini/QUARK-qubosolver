@@ -1,0 +1,15 @@
+plugins:
+  - "quark_plugin_pasqal"
+
+qubo_mapping_layer: &qubo_mapping_layer
+  - "lp_to_qubo_converter":
+      path_to_lp: "quark-plugin-pasqal/examples/example_1.lp"
+
+solver_layer: &solver_layer
+  - "qubo_to_pasqal":
+      use_quantum: true
+  - "qubo_to_pasqal":
+      use_quantum: false
+
+pipelines:
+  - [*qubo_mapping_layer, *solver_layer]
