@@ -22,12 +22,7 @@ from quark.interface_types.qubo import Qubo as QuboType
 
 
 class LpToQuboConverter(Core):
-    """Convert Linear Programs to QUBO problems using qiskit-optimization.
-    
-    Handles both Binary Integer Programs (BIPs) directly and general LPs by discretising
-    continuous variables via binary expansion. Converts all constraints to equalities
-    using slack variables and encodes them as penalty terms in the QUBO objective.
-    """
+    """Convert binary linear programs to QUBO problems using qiskit-optimization."""
 
     def __init__(
         self,
@@ -40,11 +35,10 @@ class LpToQuboConverter(Core):
         :param path_to_lp: Optional path to the LP file to convert. When omitted, the LP is read from the input data.
         :param penalty_factor: Multiplier for constraint penalty terms in the objective.
             Larger values enforce constraint satisfaction more strictly. Default 1e6.
-        :param continuous_var_precision: Number of bits to use for binary discretisation
-            of continuous variables. Each continuous variable becomes 2^precision + 1 binary
-            variables. Default 8 (precision ≈ 1/256).
-        :param discretisation_scale: Scale factor for discretised variable bounds.
-            Default 1.0 (no scaling).
+        :param continuous_var_precision: Retained for configuration compatibility; non-binary
+            variables are rejected.
+        :param discretisation_scale: Retained for configuration compatibility; non-binary
+            variables are rejected.
         """
         self.path_to_lp = path_to_lp
         self.penalty_factor = penalty_factor
@@ -93,24 +87,16 @@ class LpToQuboConverter(Core):
 
         self.original_num_variables = qp.get_num_vars()
 
-        # Check for continuous variables and discretise if necessary
-        continuous_indices = [i for i, var in enumerate(qp.variables) if var.vartype == VarType.CONTINUOUS]
-
-        if continuous_indices:
-            try:
-                qp = self._discretise_continuous_variables(qp, continuous_indices)
-            except Exception as e:
-                return Failed(reason=f"Failed to discretise continuous variables: {str(e)}")
+        non_binary_variables = [var.name for var in qp.variables if var.vartype != VarType.BINARY]
+        if non_binary_variables:
+            return Failed(
+                reason=(
+                    "Only binary variables are supported by the QUBO converter; "
+                    f"unsupported variables: {', '.join(non_binary_variables)}"
+                )
+            )
 
         self.discretised_num_variables = qp.get_num_vars()
-
-        # Convert to BINARY if not already
-        try:
-            for i, var in enumerate(qp.variables):
-                if var.vartype != VarType.BINARY:
-                    qp.binary_var(name=f"{var.name}_bin")
-        except Exception as e:
-            return Failed(reason=f"Failed to convert to binary variables: {str(e)}")
 
         # Use qiskit's converter to turn the QP into a QUBO (encodes constraints as penalties)
         try:
@@ -147,59 +133,6 @@ class LpToQuboConverter(Core):
     def get_unique_name(self) -> str | None:
         """Return a unique identifier for this converter instance."""
         return f"lp_to_qubo_pen{self.penalty_factor:.0e}_prec{self.continuous_var_precision}"
-
-    def _discretise_continuous_variables(
-        self, qp: QuadraticProgram, continuous_indices: list[int]
-    ) -> QuadraticProgram:
-        """Discretise continuous variables via binary expansion.
-        
-        For each continuous variable x in [lb, ub], create binary variables b_0, ..., b_k
-        such that x ≈ lb + Δ * (b_0 + 2*b_1 + 4*b_2 + ... + 2^k * b_k), where
-        Δ = (ub - lb) / (2^(k+1) - 1).
-        
-        :param qp: QuadraticProgram with continuous variables
-        :param continuous_indices: Indices of continuous variables to discretise
-        :return: New QuadraticProgram with continuous variables replaced by binary expansion
-        """
-        discretised_qp = QuadraticProgram(name=qp.name)
-
-        # Copy the objective sense
-        if qp.sense.name == "MINIMIZE":
-            discretised_qp.minimize_static(0, 0)
-        else:
-            discretised_qp.maximize_static(0, 0)
-
-        # Add new binary variables and track mapping
-        cont_to_bins: dict[int, list[str]] = {}
-        var_idx = 0
-
-        for i, var in enumerate(qp.variables):
-            if i in continuous_indices:
-                lb = var.lowerbound if var.lowerbound is not None else 0
-                ub = var.upperbound if var.upperbound is not None else 1
-                
-                # Create binary variables for this continuous variable
-                bin_names = []
-                for b in range(self.continuous_var_precision + 1):
-                    bin_name = f"{var.name}_b{b}"
-                    discretised_qp.binary_var(name=bin_name)
-                    bin_names.append(bin_name)
-                
-                cont_to_bins[i] = (bin_names, lb, ub)
-            else:
-                # Copy binary/integer variables as-is
-                if var.vartype == VarType.BINARY:
-                    discretised_qp.binary_var(name=var.name)
-                elif var.vartype == VarType.INTEGER:
-                    discretised_qp.integer_var(name=var.name, lowerbound=var.lowerbound, upperbound=var.upperbound)
-                else:
-                    discretised_qp.continuous_var(name=var.name, lowerbound=var.lowerbound, upperbound=var.upperbound)
-
-        # TODO: Reconstruct objective and constraints with the discretised variables
-        # For now, this is a placeholder; full implementation would involve substituting
-        # each continuous variable x_i with its binary expansion in the objective and constraints.
-
-        return discretised_qp
 
     def _extract_qubo_matrix(self, qp: QuadraticProgram) -> np.ndarray:
         """Extract the QUBO matrix from a QuadraticProgram.

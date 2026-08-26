@@ -86,6 +86,8 @@ The optional `solver_config` argument can be supplied programmatically as a `qub
 
 The plugin accepts a symmetric QUARK `Qubo`. In quantum mode, the underlying solver currently supports at most 80 variables and rejects negative off-diagonal coefficients. Invalid inputs return QUARK `Failed` results.
 
+The optional `lp_to_qubo_converter` accepts LP files only when every variable is binary. Continuous and integer variables are rejected because this plugin does not discretize non-binary variables.
+
 ## Programmatic use
 
 ```python
