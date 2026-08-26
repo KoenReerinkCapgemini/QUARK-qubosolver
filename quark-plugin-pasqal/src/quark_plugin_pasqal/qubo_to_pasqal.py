@@ -60,10 +60,16 @@ class QuboToPasqal(Core):
 
     def postprocess(self, data: Any) -> Result:
         """Convert the solver result into QUARK's sample datatype."""
-        if isinstance(data, (Other, Data)):
+        if isinstance(data, Data):
             solution = data.data
+        elif isinstance(data, Other):
+            solution = data.data
+        elif data is not None:
+            solution = data
         else:
             solution = self._solution
+        if isinstance(solution, Other):
+            solution = solution.data
         if solution is None:
             return Failed(reason="Pasqal solver returned no solution")
 

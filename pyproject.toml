@@ -19,3 +19,8 @@ quark-plugin-pasqal = { path = "quark-plugin-pasqal", editable = true }
 
 [tool.pytest.ini_options]
 pythonpath = ["quark-plugin-pasqal/src"]
+
+[dependency-groups]
+dev = [
+    "coverage>=7.15.4",
+]
