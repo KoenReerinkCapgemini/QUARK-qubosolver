@@ -85,6 +85,9 @@ class LpToQuboConverter(Core):
             except Exception as e:
                 return Failed(reason=f"Failed to parse LP string: {str(e)}")
 
+        if qp.get_num_vars() == 0:
+            return Failed(reason="Failed to parse LP string: objective section is empty")
+
         self.original_num_variables = qp.get_num_vars()
 
         non_binary_variables = [var.name for var in qp.variables if var.vartype != VarType.BINARY]
