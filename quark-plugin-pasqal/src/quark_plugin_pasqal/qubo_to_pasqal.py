@@ -88,6 +88,7 @@ class QuboToPasqal(Core):
             "num_samples": self.num_samples,
             "best_cost": self.best_cost,
             "solver_mode": self._solver_mode(),
+            "best_bitstrings": self._best_bitstrings(),
         }
 
     def get_unique_name(self) -> str:
@@ -133,6 +134,17 @@ class QuboToPasqal(Core):
         if solution.counts is None:
             return 1 if solution.probabilities is None else 0
         return int(solution.counts.sum().item())
+
+    def _best_bitstrings(self) -> list[str] | None:
+        if self._solution is None or self._solution.costs is None:
+            return None
+        if self._solution.costs.numel() == 0:
+            return []
+
+        best_cost = self._solution.costs.min()
+        best_indices = (self._solution.costs == best_cost).nonzero(as_tuple=True)[0]
+        bitstrings = self._solution.bitstrings[best_indices].tolist()
+        return ["".join(str(int(bit)) for bit in bits) for bits in bitstrings]
 
     def _solver_mode(self) -> str:
         return "quantum" if self._uses_quantum() else "classical"
