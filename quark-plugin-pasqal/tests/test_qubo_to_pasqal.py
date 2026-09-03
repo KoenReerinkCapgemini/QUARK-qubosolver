@@ -143,6 +143,7 @@ def test_preprocess_solves_qubo_and_records_metrics(monkeypatch) -> None:
     assert metrics["qubo_size"] == 2
     assert metrics["num_samples"] == 2
     assert metrics["best_cost"] == 0.0
+    assert metrics["best_bitstrings"] == ["00"]
     assert metrics["runtime_s"] is not None
 
     postprocessed = module.postprocess(result)
