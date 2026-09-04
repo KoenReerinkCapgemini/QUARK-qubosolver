@@ -1,0 +1,26 @@
+[project]
+name = "quantumlab"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "pulser-pasqal>=0.23.0",
+    "pytest>=9.1.1",
+    "qiskit-optimization>=0.7.0",
+    "quark-framework>=0.4.6",
+    "quark-plugin-pasqal",
+    "qubo-solver>=0.8.0",
+    "torch>=2.13.0",
+]
+
+[tool.uv.sources]
+quark-plugin-pasqal = { path = "quark-plugin-pasqal", editable = true }
+
+[tool.pytest.ini_options]
+pythonpath = ["quark-plugin-pasqal/src"]
+
+[dependency-groups]
+dev = [
+    "coverage>=7.15.4",
+]

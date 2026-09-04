@@ -1,0 +1,14 @@
+plugins:
+  - "quark_plugin_pasqal"
+
+first_layer: &first_layer
+  - "simple_qubo_provider"
+
+solver_layer: &solver_layer
+  - "qubo_to_pasqal":
+      use_quantum: true
+  - "qubo_to_pasqal":
+      use_quantum: false
+
+pipelines:
+  - [*first_layer, *solver_layer]
