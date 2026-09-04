@@ -20,7 +20,8 @@ class QuboToPasqal(Core):
     """Solve a QUARK ``Qubo`` and return a ``SampleDistribution``.
 
     ``solver_config`` is passed directly to ``qubo-solver``. If it is omitted,
-    the plugin creates a local quantum configuration.
+    the plugin creates a local quantum configuration. Quantum mode validates
+    the matrix against the current Pasqal solver limits before execution.
     """
 
     solver_config: SolverConfig | None = None
@@ -28,6 +29,7 @@ class QuboToPasqal(Core):
     validate_input: bool = True
 
     def __post_init__(self) -> None:
+        """Initialize execution state that is excluded from dataclass fields."""
         self.runtime_s: float | None = None
         self.qubo_size: int | None = None
         self.best_cost: float | None = None
@@ -35,7 +37,15 @@ class QuboToPasqal(Core):
         self._solution: Any = None
 
     def preprocess(self, data: Any) -> Result:
-        """Validate, solve, and carry the raw solver result downstream."""
+        """Validate a QUBO, solve it, and carry the raw result downstream.
+
+        Args:
+            data: A symmetric QUARK ``Qubo`` instance.
+
+        Returns:
+            ``Data(Other(solution))`` on success, or ``Failed`` when validation
+            or the underlying solver fails.
+        """
         if not isinstance(data, Qubo):
             return Failed(reason=f"Expected Qubo, got {type(data).__name__}")
 
@@ -59,7 +69,12 @@ class QuboToPasqal(Core):
         return Data(Other(self._solution))
 
     def postprocess(self, data: Any) -> Result:
-        """Convert the solver result into QUARK's sample datatype."""
+        """Convert a raw solver result into QUARK's ``SampleDistribution``.
+
+        Counts are preferred when they match the returned bitstrings;
+        probabilities are used as a fallback for solvers that do not return
+        matching counts.
+        """
         if isinstance(data, Data):
             solution = data.data
         elif isinstance(data, Other):
@@ -81,7 +96,7 @@ class QuboToPasqal(Core):
             return Failed(reason=f"Could not convert Pasqal result: {error}")
 
     def get_metrics(self) -> dict[str, Any]:
-        """Return benchmark metrics collected during execution."""
+        """Return runtime, problem-size, solution-quality, and mode metrics."""
         return {
             "runtime_s": self.runtime_s,
             "qubo_size": self.qubo_size,
@@ -92,10 +107,11 @@ class QuboToPasqal(Core):
         }
 
     def get_unique_name(self) -> str:
-        """Return a stable module name for benchmark output files."""
+        """Return a stable benchmark name for the selected solver mode."""
         return f"pasqal_{self._solver_mode()}"
 
     def _validate_matrix(self, matrix: np.ndarray) -> None:
+        """Validate shape, values, symmetry, and quantum-mode restrictions."""
         if not self.validate_input:
             return
         if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
@@ -112,6 +128,7 @@ class QuboToPasqal(Core):
 
     @staticmethod
     def _to_samples(solution: Any) -> list[tuple[str, float]]:
+        """Convert solver bitstrings and counts or probabilities to samples."""
         bitstrings = solution.bitstrings.tolist()
         counts = solution.counts
         probabilities = solution.probabilities
@@ -131,11 +148,13 @@ class QuboToPasqal(Core):
 
     @staticmethod
     def _shot_count(solution: Any) -> int:
+        """Return the total number of shots represented by a solver result."""
         if solution.counts is None:
             return 1 if solution.probabilities is None else 0
         return int(solution.counts.sum().item())
 
     def _best_bitstrings(self) -> list[str] | None:
+        """Return all bitstrings tied for the lowest recorded cost."""
         if self._solution is None or self._solution.costs is None:
             return None
         if self._solution.costs.numel() == 0:
@@ -147,14 +166,17 @@ class QuboToPasqal(Core):
         return ["".join(str(int(bit)) for bit in bits) for bits in bitstrings]
 
     def _solver_mode(self) -> str:
+        """Return ``quantum`` or ``classical`` for the effective solver mode."""
         return "quantum" if self._uses_quantum() else "classical"
 
     def _effective_config(self) -> SolverConfig:
+        """Return the caller's configuration or construct the default one."""
         if self.solver_config is not None:
             return self.solver_config
         return SolverConfig(use_quantum=self.use_quantum if self.use_quantum is not None else True)
 
     def _uses_quantum(self) -> bool:
+        """Resolve the mode, preferring the explicit ``use_quantum`` setting."""
         if self.use_quantum is not None:
             return self.use_quantum
         return self.solver_config is None or self.solver_config.use_quantum is not False

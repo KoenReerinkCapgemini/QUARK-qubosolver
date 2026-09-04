@@ -1,94 +1,48 @@
 # quark-plugin-pasqal
 
-A QUARK plugin that wraps Pasqal's [Pulser](https://github.com/pasqal-io/Pulser) library to solve QUBO problems via the **Quantum Adiabatic Algorithm (QAA)** on neutral-atom hardware (or simulation).
+QUARK plugin for solving QUBO problems with Pasqal's [`qubo-solver`](https://github.com/pasqal-io/qubo-solver) package.
 
-## How it fits in the pipeline
+The plugin provides three pipeline modules:
 
-```
-tsp_graph_provider  →  tsp_qubo_mapping  →  pasqal_qaa_solver
-         (Graph)              (Qubo)           (SampleDistribution)
-```
-
-The Pasqal solver is a leaf module: it receives a `Qubo`, physically embeds it onto a neutral-atom register, runs QAA, and returns a `SampleDistribution`.
-
-## Constraints
-
-- **All off-diagonal QUBO terms must be non-negative.** The Rydberg interaction used to embed the QUBO is purely repulsive, so QUBO instances with negative cross-terms cannot be directly embedded. The solver returns `Failed` with a descriptive message in this case.
-- **Non-uniform diagonals** are approximated by their global average since per-atom local addressability is out of scope for v1; a warning is logged when this happens.
-- Only the `pulser-simulation` backend is supported in v1; the Pasqal cloud backend is a stretch goal.
+- `lp_to_qubo_converter` converts binary LP files or QUARK `LP` objects into `Qubo` objects with Qiskit's `QuadraticProgramToQubo` converter.
+- `qubo_to_pasqal` solves a QUARK `Qubo` and returns a `SampleDistribution`.
+- `simple_qubo_provider` supplies a small deterministic QUBO for local examples and tests.
 
 ## Installation
+
+From the repository root, install the framework and this plugin into the active `uv` environment:
+
+```powershell
+uv sync
+uv pip install -e .\quark-plugin-pasqal
+```
+
+For a published package, install it with:
 
 ```bash
 pip install quark-plugin-pasqal
 ```
 
-## Usage
+## QUBO pipeline
 
-Add to your `config.yml`:
-
-```yaml
-plugins: ["quark_plugin_pasqal"]
-
-pipeline:
-  - "tsp_graph_provider": { nodes: 5, seed: 42 }
-  - "tsp_qubo_mapping_dnx"
-  - "pasqal_qaa_solver":
-      evolution_time: 4000
-      device: "DigitalAnalogDevice"
-      backend: "simulation"
-      shots: 1000
-```
-
-### Programmatic Usage
-
-```python
-from quark_plugin_pasqal import PasqalQAASolver
-from quark.interface_types.qubo import Qubo
-import numpy as np
-
-Q = np.array([
-    [-10.0, 19.7365809, 19.7365809, 5.42015853, 5.42015853],
-    [19.7365809, -10.0, 20.67626392, 0.17675796, 0.85604541],
-    [19.7365809, 20.67626392, -10.0, 0.85604541, 0.17675796],
-    [5.42015853, 0.17675796, 0.85604541, -10.0, 0.32306662],
-    [5.42015853, 0.85604541, 0.17675796, 0.32306662, -10.0],
-])
-
-solver = PasqalQAASolver(evolution_time=4000, shots=1000)
-result = solver.preprocess(Qubo.from_matrix(Q))
-```
-# quark-plugin-pasqal
-
-A QUARK plugin that solves QUARK `Qubo` instances with the Pasqal `qubo-solver` package.
-
-## Pipeline
-
-```text
-Qubo provider -> qubo_to_pasqal -> SampleDistribution
-```
-
-## Configuration
+Pass a QUBO provider into `qubo_to_pasqal` in a QUARK configuration:
 
 ```yaml
 plugins:
   - "quark_plugin_pasqal"
 
 pipeline:
-  - "qubo_provider"
+  - "simple_qubo_provider"
   - "qubo_to_pasqal":
+      use_quantum: true
       validate_input: true
 ```
 
-The optional `solver_config` argument can be supplied programmatically as a `qubo-solver` `SolverConfig`. Cloud credentials should be configured through the Pasqal client environment, never committed to source control.
+`use_quantum: true` uses Pasqal's local quantum emulator by default. Set it to `false` to use the classical solver path. A custom `qubo-solver` `SolverConfig` can also be passed when constructing `QuboToPasqal` programmatically.
 
-## Supported input
+The solver records `runtime_s`, `qubo_size`, `num_samples`, `best_cost`, `solver_mode`, and `best_bitstrings` as QUARK metrics.
 
-The plugin accepts a symmetric QUARK `Qubo`. In quantum mode, the underlying solver currently supports at most 80 variables and rejects negative off-diagonal coefficients. Invalid inputs return QUARK `Failed` results.
-
-The optional `lp_to_qubo_converter` accepts LP files only when every variable is binary. Continuous and integer variables are rejected because this plugin does not discretize non-binary variables.
-
-## Programmatic use
+### Programmatic use
 
 ```python
 import numpy as np
@@ -96,8 +50,11 @@ from quark.core import Data
 from quark.interface_types import Qubo
 from quark_plugin_pasqal import QuboToPasqal
 
-qubo = Qubo.from_matrix(np.array([[1.0, 0.0], [0.0, 1.0]]))
-solver = QuboToPasqal()
+qubo = Qubo.from_matrix(np.array([
+    [-1.0, 1.0],
+    [1.0, -1.0],
+]))
+solver = QuboToPasqal(use_quantum=True)
 result = solver.preprocess(qubo)
 
 if isinstance(result, Data):
@@ -105,35 +62,64 @@ if isinstance(result, Data):
     print(samples)
 ```
 
-The first local test should use the default local emulator. Test cloud execution separately because it requires credentials, device access, and network connectivity.
+## LP to QUBO conversion
 
-## Run an end-to-end QUARK example
+The converter accepts LP problems only when every variable is binary. Continuous and integer variables are rejected; this plugin does not discretize non-binary variables. Constraint penalties are controlled by `penalty_factor` and default to `1e6`.
 
-From the repository root, first install the local plugin into the active environment:
+An LP-to-QUBO pipeline can be configured as follows:
 
-```powershell
-uv pip install -e .\\quark-plugin-pasqal
+```yaml
+plugins:
+  - "quark_plugin_pasqal"
+
+pipeline:
+  - "lp_to_qubo_converter":
+      path_to_lp: "quark-plugin-pasqal/examples/example_1.lp"
+      penalty_factor: 1000000
+  - "qubo_to_pasqal":
+      use_quantum: true
 ```
 
-Then run the deterministic two-variable example:
+The same conversion is available in Python:
+
+```python
+from quark.interface_types.lp import LP
+from quark_plugin_pasqal import LpToQuboConverter
+
+lp = LP.from_file("quark-plugin-pasqal/examples/example_1.lp")
+result = LpToQuboConverter(penalty_factor=1).preprocess(lp)
+```
+
+## Supported input and limitations
+
+- Input QUBOs must be square, symmetric, and contain finite values when validation is enabled.
+- Pasqal's quantum solver currently supports at most 80 variables.
+- Quantum mode rejects negative off-diagonal coefficients.
+- Invalid input and solver failures are returned as QUARK `Failed` results.
+- Cloud execution requires Pasqal credentials and device access; local examples use the emulator and do not require cloud credentials.
+
+## Examples and tests
+
+Run a small quantum example from the repository root:
 
 ```powershell
 uv run python -m quark -c quark-plugin-pasqal/examples/small_quantum.yml
 ```
 
-The provider creates the QUBO
-
-```text
-[[-1, 1],
- [ 1,-1]]
-```
-
-Its best bitstrings are `01` and `10`, both with cost `-1`. QUARK writes the run results to a results directory and records the Pasqal runtime, QUBO size, sample count, and best cost.
-
-To compare the local quantum path with the solver's classical path, use:
+Compare the quantum-emulator and classical solver paths:
 
 ```powershell
 uv run python -m quark -c quark-plugin-pasqal/examples/small_compare.yml
 ```
 
-The comparison config creates two pipelines from the same provider: one with `use_quantum: true` and one with `use_quantum: false`. This is a local emulator versus classical-solver comparison, not a claim about hardware performance. It does not require Pasqal cloud credentials.
+Run the LP conversion example directly:
+
+```powershell
+uv run python quark-plugin-pasqal/examples/run_lp_to_qubo.py
+```
+
+Run the plugin test suite:
+
+```powershell
+uv run pytest quark-plugin-pasqal/tests -q
+```
