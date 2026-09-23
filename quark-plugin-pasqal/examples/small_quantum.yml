@@ -1,0 +1,7 @@
+plugins:
+  - "quark_plugin_pasqal"
+
+pipeline:
+  - "simple_qubo_provider"
+  - "qubo_to_pasqal":
+      use_quantum: true

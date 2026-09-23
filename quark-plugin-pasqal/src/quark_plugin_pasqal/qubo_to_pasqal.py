@@ -1,0 +1,182 @@
+"""Run QUARK QUBO instances with the Pasqal QUBO solver."""
+
+from __future__ import annotations
+
+import time
+from dataclasses import dataclass
+from typing import Any
+
+import numpy as np
+import torch
+from quark.core import Core, Data, Failed, Result
+from quark.interface_types import Other, Qubo, SampleDistribution
+from qubosolver.config import SolverConfig
+from qubosolver.qubo_instance import QUBOInstance
+from qubosolver.solver import QuboSolver
+
+
+@dataclass
+class QuboToPasqal(Core):
+    """Solve a QUARK ``Qubo`` and return a ``SampleDistribution``.
+
+    ``solver_config`` is passed directly to ``qubo-solver``. If it is omitted,
+    the plugin creates a local quantum configuration. Quantum mode validates
+    the matrix against the current Pasqal solver limits before execution.
+    """
+
+    solver_config: SolverConfig | None = None
+    use_quantum: bool | None = None
+    validate_input: bool = True
+
+    def __post_init__(self) -> None:
+        """Initialize execution state that is excluded from dataclass fields."""
+        self.runtime_s: float | None = None
+        self.qubo_size: int | None = None
+        self.best_cost: float | None = None
+        self.num_samples: int | None = None
+        self._solution: Any = None
+
+    def preprocess(self, data: Any) -> Result:
+        """Validate a QUBO, solve it, and carry the raw result downstream.
+
+        Args:
+            data: A symmetric QUARK ``Qubo`` instance.
+
+        Returns:
+            ``Data(Other(solution))`` on success, or ``Failed`` when validation
+            or the underlying solver fails.
+        """
+        if not isinstance(data, Qubo):
+            return Failed(reason=f"Expected Qubo, got {type(data).__name__}")
+
+        try:
+            matrix = np.asarray(data.as_matrix(), dtype=np.float32)
+            self._validate_matrix(matrix)
+            self.qubo_size = int(matrix.shape[0])
+            instance = QUBOInstance(coefficients=torch.from_numpy(matrix))
+
+            start_time = time.perf_counter()
+            config = self._effective_config()
+            solver = QuboSolver(instance, config)
+            self._solution = solver.solve()
+            self.runtime_s = time.perf_counter() - start_time
+            self.num_samples = int(self._solution.bitstrings.shape[0])
+            if self._solution.costs.numel() > 0:
+                self.best_cost = float(self._solution.costs.min().item())
+        except (ValueError, TypeError, RuntimeError) as error:
+            return Failed(reason=f"Pasqal QUBO solve failed: {error}")
+
+        return Data(Other(self._solution))
+
+    def postprocess(self, data: Any) -> Result:
+        """Convert a raw solver result into QUARK's ``SampleDistribution``.
+
+        Counts are preferred when they match the returned bitstrings;
+        probabilities are used as a fallback for solvers that do not return
+        matching counts.
+        """
+        if isinstance(data, Data):
+            solution = data.data
+        elif isinstance(data, Other):
+            solution = data.data
+        elif data is not None:
+            solution = data
+        else:
+            solution = self._solution
+        if isinstance(solution, Other):
+            solution = solution.data
+        if solution is None:
+            return Failed(reason="Pasqal solver returned no solution")
+
+        try:
+            samples = self._to_samples(solution)
+            shots = self._shot_count(solution)
+            return Data(SampleDistribution.from_list(samples, shots))
+        except (ValueError, TypeError, AttributeError) as error:
+            return Failed(reason=f"Could not convert Pasqal result: {error}")
+
+    def get_metrics(self) -> dict[str, Any]:
+        """Return runtime, problem-size, solution-quality, and mode metrics."""
+        return {
+            "runtime_s": self.runtime_s,
+            "qubo_size": self.qubo_size,
+            "num_samples": self.num_samples,
+            "best_cost": self.best_cost,
+            "solver_mode": self._solver_mode(),
+            "best_bitstrings": self._best_bitstrings(),
+        }
+
+    def get_unique_name(self) -> str:
+        """Return a stable benchmark name for the selected solver mode."""
+        return f"pasqal_{self._solver_mode()}"
+
+    def _validate_matrix(self, matrix: np.ndarray) -> None:
+        """Validate shape, values, symmetry, and quantum-mode restrictions."""
+        if not self.validate_input:
+            return
+        if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
+            raise ValueError("QUBO matrix must be square")
+        if not np.isfinite(matrix).all():
+            raise ValueError("QUBO matrix must contain only finite values")
+        if not np.allclose(matrix, matrix.T):
+            raise ValueError("QUBO matrix must be symmetric")
+        use_quantum = self._uses_quantum()
+        if use_quantum and matrix.shape[0] > 80:
+            raise ValueError("Pasqal quantum solver supports at most 80 variables")
+        if use_quantum and np.any(matrix[~np.eye(matrix.shape[0], dtype=bool)] < 0):
+            raise ValueError("Pasqal quantum solver does not support negative off-diagonal coefficients")
+
+    @staticmethod
+    def _to_samples(solution: Any) -> list[tuple[str, float]]:
+        """Convert solver bitstrings and counts or probabilities to samples."""
+        bitstrings = solution.bitstrings.tolist()
+        counts = solution.counts
+        probabilities = solution.probabilities
+        if counts is not None and counts.numel() == len(bitstrings):
+            return [
+                ("".join(str(int(bit)) for bit in bits), float(count))
+                for bits, count in zip(bitstrings, counts.tolist())
+            ]
+        if probabilities is not None and probabilities.numel() == len(bitstrings):
+            return [
+                ("".join(str(int(bit)) for bit in bits), float(probability))
+                for bits, probability in zip(bitstrings, probabilities.tolist())
+            ]
+        if counts is None and probabilities is None and len(bitstrings) == 1:
+            return [("".join(str(int(bit)) for bit in bitstrings[0]), 1.0)]
+        raise ValueError("solver result contains neither matching counts nor probabilities")
+
+    @staticmethod
+    def _shot_count(solution: Any) -> int:
+        """Return the total number of shots represented by a solver result."""
+        if solution.counts is None:
+            return 1 if solution.probabilities is None else 0
+        return int(solution.counts.sum().item())
+
+    def _best_bitstrings(self) -> list[str] | None:
+        """Return all bitstrings tied for the lowest recorded cost."""
+        if self._solution is None or self._solution.costs is None:
+            return None
+        if self._solution.costs.numel() == 0:
+            return []
+
+        best_cost = self._solution.costs.min()
+        best_indices = (self._solution.costs == best_cost).nonzero(as_tuple=True)[0]
+        bitstrings = self._solution.bitstrings[best_indices].tolist()
+        return ["".join(str(int(bit)) for bit in bits) for bits in bitstrings]
+
+    def _solver_mode(self) -> str:
+        """Return ``quantum`` or ``classical`` for the effective solver mode."""
+        return "quantum" if self._uses_quantum() else "classical"
+
+    def _effective_config(self) -> SolverConfig:
+        """Return the caller's configuration or construct the default one."""
+        if self.solver_config is not None:
+            return self.solver_config
+        return SolverConfig(use_quantum=self.use_quantum if self.use_quantum is not None else True)
+
+    def _uses_quantum(self) -> bool:
+        """Resolve the mode, preferring the explicit ``use_quantum`` setting."""
+        if self.use_quantum is not None:
+            return self.use_quantum
+        return self.solver_config is None or self.solver_config.use_quantum is not False
