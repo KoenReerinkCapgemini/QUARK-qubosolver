@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quark-plugin-pasqal"
+version = "0.1.0"
+description = "QUARK plugin for solving QUBOs with the Pasqal QUBO solver"
+readme = "README.md"
+requires-python = ">=3.12"
+license = {text = "Apache-2.0"}
+authors = [{name = "QUARK Contributors"}]
+dependencies = [
+    "quark-framework>=0.4.5",
+    "qubo-solver>=0.8.0",
+    "numpy>=1.21.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+]
+
+[tool.setuptools]
+packages = ["quark_plugin_pasqal"]
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
