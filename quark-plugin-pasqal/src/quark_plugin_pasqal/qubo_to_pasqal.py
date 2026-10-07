@@ -26,6 +26,7 @@ class QuboToPasqal(Core):
 
     solver_config: SolverConfig | None = None
     use_quantum: bool | None = None
+    use_cloud: bool = False
     validate_input: bool = True
 
     def __post_init__(self) -> None:
@@ -53,11 +54,10 @@ class QuboToPasqal(Core):
             matrix = np.asarray(data.as_matrix(), dtype=np.float32)
             self._validate_matrix(matrix)
             self.qubo_size = int(matrix.shape[0])
-            instance = QUBOInstance(coefficients=torch.from_numpy(matrix))
 
             start_time = time.perf_counter()
-            config = self._effective_config()
-            solver = QuboSolver(instance, config)
+
+            solver = self._resolve_qubo_solver(matrix)
             self._solution = solver.solve()
             self.runtime_s = time.perf_counter() - start_time
             self.num_samples = int(self._solution.bitstrings.shape[0])
@@ -180,3 +180,11 @@ class QuboToPasqal(Core):
         if self.use_quantum is not None:
             return self.use_quantum
         return self.solver_config is None or self.solver_config.use_quantum is not False
+
+    def _resolve_qubo_solver(self, matrix: np.ndarray = None) -> QuboSolver:
+        if not self.use_quantum:
+            instance = QUBOInstance(coefficients=torch.from_numpy(matrix))
+            config = self._effective_config()
+            return QuboSolver(instance, config)
+        else:
+            raise NotImplementedError("Cloud solver not implemented yet")
