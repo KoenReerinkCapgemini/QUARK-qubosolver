@@ -199,10 +199,10 @@ class QuboToPasqal(Core):
         if USERNAME is None or PASSWORD is None:
             raise ValueError("PasqalCloudConnection USERNAME or PASSWORD cannot be found in environment variables.")
 
-        connection = PasqalCloudConnection(
+        self.connection = PasqalCloudConnection(
             username=USERNAME,
             password=PASSWORD,
             project_id=PROJECT_ID,
         )
 
-        return connection
+        return self.connection
