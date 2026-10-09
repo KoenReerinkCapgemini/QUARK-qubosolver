@@ -10,6 +10,7 @@ import numpy as np
 import torch
 from quark.core import Core, Data, Failed, Result
 from quark.interface_types import Other, Qubo, SampleDistribution
+from qubosolver import QUBOSolution
 from qubosolver.config import SolverConfig
 from qubosolver.qubo_instance import QUBOInstance
 from qubosolver.solver import QuboSolver
@@ -55,11 +56,8 @@ class QuboToPasqal(Core):
             matrix = np.asarray(data.as_matrix(), dtype=np.float32)
             self._validate_matrix(matrix)
             self.qubo_size = int(matrix.shape[0])
-
             start_time = time.perf_counter()
-
-            solver = self._resolve_qubo_solver(matrix)
-            self._solution = solver.solve()
+            self._solution = self._obtain_solution(matrix)
             self.runtime_s = time.perf_counter() - start_time
             self.num_samples = int(self._solution.bitstrings.shape[0])
             if self._solution.costs.numel() > 0:
@@ -182,13 +180,15 @@ class QuboToPasqal(Core):
             return self.use_quantum
         return self.solver_config is None or self.solver_config.use_quantum is not False
 
-    def _resolve_qubo_solver(self, matrix: np.ndarray = None) -> QuboSolver:
+    def _obtain_solution(self, matrix: np.ndarray = None) -> QUBOSolution:
         if not self.use_quantum:
             instance = QUBOInstance(coefficients=torch.from_numpy(matrix))
             config = self._effective_config()
-            return QuboSolver(instance, config)
+            solver = QuboSolver(instance, config)
+            return solver.solve()
         else:
             connection = self._get_pascal_cloud_connection()
+            return None #In Progress
 
     def _get_pascal_cloud_connection(self) -> PasqalCloudConnection:
         """Return a PasqalCloudConnection for the current environment."""
