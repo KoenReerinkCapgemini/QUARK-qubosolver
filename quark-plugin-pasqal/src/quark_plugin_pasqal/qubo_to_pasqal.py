@@ -13,7 +13,8 @@ from quark.interface_types import Other, Qubo, SampleDistribution
 from qubosolver.config import SolverConfig
 from qubosolver.qubo_instance import QUBOInstance
 from qubosolver.solver import QuboSolver
-
+from pasqal_cloud import PasqalCloudConnection
+import os
 
 @dataclass
 class QuboToPasqal(Core):
@@ -187,4 +188,21 @@ class QuboToPasqal(Core):
             config = self._effective_config()
             return QuboSolver(instance, config)
         else:
-            raise NotImplementedError("Cloud solver not implemented yet")
+            connection = self._get_pascal_cloud_connection()
+
+    def _get_pascal_cloud_connection(self) -> PasqalCloudConnection:
+        """Return a PasqalCloudConnection for the current environment."""
+        USERNAME = os.environ.get("QUBO_USERNAME")
+        PASSWORD = os.environ.get("QUBO_PASSWORD")
+        PROJECT_ID = "100"
+
+        if USERNAME is None or PASSWORD is None:
+            raise ValueError("PasqalCloudConnection USERNAME or PASSWORD cannot be found in environment variables.")
+
+        connection = PasqalCloudConnection(
+            username=USERNAME,
+            password=PASSWORD,
+            project_id=PROJECT_ID,
+        )
+
+        return connection
