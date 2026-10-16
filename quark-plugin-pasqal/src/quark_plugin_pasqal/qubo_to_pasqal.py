@@ -3,17 +3,26 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import numpy as np
+import qoolqit
 import torch
 from quark.core import Core, Data, Failed, Result
 from quark.interface_types import Other, Qubo, SampleDistribution
-from qubosolver.config import SolverConfig
-from qubosolver.qubo_instance import QUBOInstance
-from qubosolver.solver import QuboSolver
-
+from qubosolver import (
+    Instance,
+    QuantumSolvingConfig,
+    RemoteEmulator,
+    Solver,
+    SolverConfig,
+    Solution,
+    analysis,
+    matrix,
+)
+from pasqal_cloud import PasqalCloudConnection
+import os
 
 @dataclass
 class QuboToPasqal(Core):
@@ -26,6 +35,7 @@ class QuboToPasqal(Core):
 
     solver_config: SolverConfig | None = None
     use_quantum: bool | None = None
+    use_cloud: bool = False
     validate_input: bool = True
 
     def __post_init__(self) -> None:
@@ -53,12 +63,8 @@ class QuboToPasqal(Core):
             matrix = np.asarray(data.as_matrix(), dtype=np.float32)
             self._validate_matrix(matrix)
             self.qubo_size = int(matrix.shape[0])
-            instance = QUBOInstance(coefficients=torch.from_numpy(matrix))
-
             start_time = time.perf_counter()
-            config = self._effective_config()
-            solver = QuboSolver(instance, config)
-            self._solution = solver.solve()
+            self._solution = self._obtain_solution(matrix)
             self.runtime_s = time.perf_counter() - start_time
             self.num_samples = int(self._solution.bitstrings.shape[0])
             if self._solution.costs.numel() > 0:
@@ -180,3 +186,36 @@ class QuboToPasqal(Core):
         if self.use_quantum is not None:
             return self.use_quantum
         return self.solver_config is None or self.solver_config.use_quantum is not False
+
+    def _obtain_solution(self, matrix: np.ndarray = None) -> Solution:
+        instance = Instance(coefficients=torch.from_numpy(matrix))
+        config = self._effective_config()
+
+        if self.use_quantum:
+            connection = self._get_pascal_cloud_connection()
+            config = replace(
+                config,
+                solving=QuantumSolvingConfig(
+                    device=qoolqit.Device.from_connection(connection, self.device_name),
+                    backend=RemoteEmulator(connection=connection, num_shots=self.num_shots),
+                ),
+            )
+
+        return Solver(instance, config).solve()
+
+    def _get_pascal_cloud_connection(self) -> PasqalCloudConnection:
+        """Return a PasqalCloudConnection for the current environment."""
+        USERNAME = os.environ.get("QUBO_USERNAME")
+        PASSWORD = os.environ.get("QUBO_PASSWORD")
+        PROJECT_ID = os.environ.get("QUBO_PROJECT_ID")
+
+        if USERNAME is None or PASSWORD is None or PROJECT_ID is None:
+            raise ValueError("PasqalCloudConnection USERNAME, PASSWORD or PROJECT_ID cannot be found in environment variables.")
+
+        self.connection = PasqalCloudConnection(
+            username=USERNAME,
+            password=PASSWORD,
+            project_id=PROJECT_ID
+        )
+
+        return self.connection

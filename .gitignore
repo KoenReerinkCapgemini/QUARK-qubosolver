@@ -43,3 +43,4 @@ results/
 .vscode/*.code-workspace
 .DS_Store
 Thumbs.db
+*.idea
