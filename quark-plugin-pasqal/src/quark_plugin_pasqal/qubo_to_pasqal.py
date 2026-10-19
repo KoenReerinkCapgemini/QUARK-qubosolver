@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -14,12 +14,11 @@ from quark.interface_types import Other, Qubo, SampleDistribution
 from qubosolver import (
     Instance,
     QuantumSolvingConfig,
+    ClassicalSolvingConfig,
     RemoteEmulator,
     Solver,
     SolverConfig,
     Solution,
-    analysis,
-    matrix,
 )
 from pasqal_cloud import PasqalCloudConnection
 import os
@@ -176,31 +175,34 @@ class QuboToPasqal(Core):
         return "quantum" if self._uses_quantum() else "classical"
 
     def _effective_config(self) -> SolverConfig:
-        """Return the caller's configuration or construct the default one."""
         if self.solver_config is not None:
             return self.solver_config
-        return SolverConfig(use_quantum=self.use_quantum if self.use_quantum is not None else True)
+
+        if self.use_quantum:
+            if self.use_cloud:
+                connection = self._get_pascal_cloud_connection()
+                qsc = QuantumSolvingConfig(
+                    device=qoolqit.Device.from_connection(connection, self.device_name),
+                    backend=RemoteEmulator(connection=connection, num_shots=self.num_shots)
+                    )
+            else:
+                qsc = QuantumSolvingConfig() #Uses all default settings
+
+            return SolverConfig(solving=qsc)
+        else:
+            return SolverConfig(solving=ClassicalSolvingConfig()) #Uses all default settings for classical solving
 
     def _uses_quantum(self) -> bool:
         """Resolve the mode, preferring the explicit ``use_quantum`` setting."""
         if self.use_quantum is not None:
             return self.use_quantum
-        return self.solver_config is None or self.solver_config.use_quantum is not False
+        else:
+            raise ValueError("Cannot determine whether to use quantum or classical mode.")
+
 
     def _obtain_solution(self, matrix: np.ndarray = None) -> Solution:
-        instance = Instance(coefficients=torch.from_numpy(matrix))
+        instance = Instance(torch.from_numpy(matrix))
         config = self._effective_config()
-
-        if self.use_quantum:
-            connection = self._get_pascal_cloud_connection()
-            config = replace(
-                config,
-                solving=QuantumSolvingConfig(
-                    device=qoolqit.Device.from_connection(connection, self.device_name),
-                    backend=RemoteEmulator(connection=connection, num_shots=self.num_shots),
-                ),
-            )
-
         return Solver(instance, config).solve()
 
     def _get_pascal_cloud_connection(self) -> PasqalCloudConnection:
