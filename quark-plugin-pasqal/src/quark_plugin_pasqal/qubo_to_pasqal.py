@@ -36,6 +36,7 @@ class QuboToPasqal(Core):
     use_quantum: bool | None = None
     use_cloud: bool = False
     validate_input: bool = True
+    device_name: str | None = "FRESNEL"
 
     def __post_init__(self) -> None:
         """Initialize execution state that is excluded from dataclass fields."""
@@ -180,11 +181,16 @@ class QuboToPasqal(Core):
 
         if self.use_quantum:
             if self.use_cloud:
-                connection = self._get_pascal_cloud_connection()
-                qsc = QuantumSolvingConfig(
-                    device=qoolqit.Device.from_connection(connection, self.device_name),
-                    backend=RemoteEmulator(connection=connection, num_shots=self.num_shots)
-                    )
+                try:
+                    connection = self._get_pascal_cloud_connection()
+                    qsc = QuantumSolvingConfig(
+                        device=qoolqit.Device.from_connection(connection, self.device_name),
+                        backend=RemoteEmulator(connection=connection, num_shots=self.num_samples)
+                        )
+                except Exception as e:
+                    if "is not available through the provided connection" in str(e):
+                        print(connection.fetch_available_devices())
+                    raise ValueError(f"Failed to obtain Pasqal cloud connection: {e}")
             else:
                 qsc = QuantumSolvingConfig() #Uses all default settings
 
@@ -207,12 +213,16 @@ class QuboToPasqal(Core):
 
     def _get_pascal_cloud_connection(self) -> PasqalCloudConnection:
         """Return a PasqalCloudConnection for the current environment."""
-        USERNAME = os.environ.get("QUBO_USERNAME")
-        PASSWORD = os.environ.get("QUBO_PASSWORD")
-        PROJECT_ID = os.environ.get("QUBO_PROJECT_ID")
+        USERNAME = os.environ.get("PASQAL_USERNAME")
+        PASSWORD = os.environ.get("PASQAL_PASSWORD")
+        PROJECT_ID = os.environ.get("PASQAL_PROJECT_ID")
 
-        if USERNAME is None or PASSWORD is None or PROJECT_ID is None:
-            raise ValueError("PasqalCloudConnection USERNAME, PASSWORD or PROJECT_ID cannot be found in environment variables.")
+        if USERNAME is None:
+            raise ValueError("PasqalCloudConnection USERNAME cannot be found in environment variables.")
+        if PASSWORD is None:
+            raise ValueError("PasqalCloudConnection PASSWORD cannot be found in environment variables.")
+        if PROJECT_ID is None:
+            raise ValueError("PasqalCloudConnection PROJECT_ID cannot be found in environment variables.")
 
         self.connection = PasqalCloudConnection(
             username=USERNAME,
