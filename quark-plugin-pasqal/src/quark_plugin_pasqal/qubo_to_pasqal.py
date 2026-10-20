@@ -7,13 +7,21 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+import qoolqit
 import torch
 from quark.core import Core, Data, Failed, Result
 from quark.interface_types import Other, Qubo, SampleDistribution
-from qubosolver.config import SolverConfig
-from qubosolver.qubo_instance import QUBOInstance
-from qubosolver.solver import QuboSolver
-
+from qubosolver import (
+    Instance,
+    QuantumSolvingConfig,
+    ClassicalSolvingConfig,
+    RemoteEmulator,
+    Solver,
+    SolverConfig,
+    Solution,
+)
+from pasqal_cloud import PasqalCloudConnection
+import os
 
 @dataclass
 class QuboToPasqal(Core):
@@ -26,7 +34,9 @@ class QuboToPasqal(Core):
 
     solver_config: SolverConfig | None = None
     use_quantum: bool | None = None
+    use_cloud: bool = False
     validate_input: bool = True
+    device_name: str | None = "FRESNEL"
 
     def __post_init__(self) -> None:
         """Initialize execution state that is excluded from dataclass fields."""
@@ -53,12 +63,8 @@ class QuboToPasqal(Core):
             matrix = np.asarray(data.as_matrix(), dtype=np.float32)
             self._validate_matrix(matrix)
             self.qubo_size = int(matrix.shape[0])
-            instance = QUBOInstance(coefficients=torch.from_numpy(matrix))
-
             start_time = time.perf_counter()
-            config = self._effective_config()
-            solver = QuboSolver(instance, config)
-            self._solution = solver.solve()
+            self._solution = self._obtain_solution(matrix)
             self.runtime_s = time.perf_counter() - start_time
             self.num_samples = int(self._solution.bitstrings.shape[0])
             if self._solution.costs.numel() > 0:
@@ -170,13 +176,58 @@ class QuboToPasqal(Core):
         return "quantum" if self._uses_quantum() else "classical"
 
     def _effective_config(self) -> SolverConfig:
-        """Return the caller's configuration or construct the default one."""
         if self.solver_config is not None:
             return self.solver_config
-        return SolverConfig(use_quantum=self.use_quantum if self.use_quantum is not None else True)
+
+        if self.use_quantum:
+            if self.use_cloud:
+                try:
+                    connection = self._get_pascal_cloud_connection()
+                    qsc = QuantumSolvingConfig(
+                        device=qoolqit.Device.from_connection(connection, self.device_name),
+                        backend=RemoteEmulator(connection=connection, num_shots=self.num_samples)
+                        )
+                except Exception as e:
+                    if "is not available through the provided connection" in str(e):
+                        print(connection.fetch_available_devices())
+                    raise ValueError(f"Failed to obtain Pasqal cloud connection: {e}")
+            else:
+                qsc = QuantumSolvingConfig() #Uses all default settings
+
+            return SolverConfig(solving=qsc)
+        else:
+            return SolverConfig(solving=ClassicalSolvingConfig()) #Uses all default settings for classical solving
 
     def _uses_quantum(self) -> bool:
         """Resolve the mode, preferring the explicit ``use_quantum`` setting."""
         if self.use_quantum is not None:
             return self.use_quantum
-        return self.solver_config is None or self.solver_config.use_quantum is not False
+        else:
+            raise ValueError("Cannot determine whether to use quantum or classical mode.")
+
+
+    def _obtain_solution(self, matrix: np.ndarray = None) -> Solution:
+        instance = Instance(torch.from_numpy(matrix))
+        config = self._effective_config()
+        return Solver(instance, config).solve()
+
+    def _get_pascal_cloud_connection(self) -> PasqalCloudConnection:
+        """Return a PasqalCloudConnection for the current environment."""
+        USERNAME = os.environ.get("PASQAL_USERNAME")
+        PASSWORD = os.environ.get("PASQAL_PASSWORD")
+        PROJECT_ID = os.environ.get("PASQAL_PROJECT_ID")
+
+        if USERNAME is None:
+            raise ValueError("PasqalCloudConnection USERNAME cannot be found in environment variables.")
+        if PASSWORD is None:
+            raise ValueError("PasqalCloudConnection PASSWORD cannot be found in environment variables.")
+        if PROJECT_ID is None:
+            raise ValueError("PasqalCloudConnection PROJECT_ID cannot be found in environment variables.")
+
+        self.connection = PasqalCloudConnection(
+            username=USERNAME,
+            password=PASSWORD,
+            project_id=PROJECT_ID
+        )
+
+        return self.connection

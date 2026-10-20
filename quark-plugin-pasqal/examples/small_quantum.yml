@@ -5,3 +5,4 @@ pipeline:
   - "simple_qubo_provider"
   - "qubo_to_pasqal":
       use_quantum: true
+      use_cloud: true

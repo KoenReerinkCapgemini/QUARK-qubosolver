@@ -14,6 +14,8 @@ dependencies = [
     "quark-framework>=0.4.5",
     "qubo-solver>=0.8.0",
     "numpy>=1.21.0",
+    "pasqal-cloud==0.24.0",
+    "qiskit-optimization>=0.7.0",
 ]
 
 [project.optional-dependencies]
