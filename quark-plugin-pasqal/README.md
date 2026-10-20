@@ -42,6 +42,38 @@ pipeline:
 
 The solver records `runtime_s`, `qubo_size`, `num_samples`, `best_cost`, `solver_mode`, and `best_bitstrings` as QUARK metrics.
 
+### Running on Pasqal Cloud
+
+To submit a quantum solve to Pasqal Cloud, enable `use_cloud` as well as `use_quantum`:
+
+```yaml
+- "qubo_to_pasqal":
+    use_quantum: true
+    use_cloud: true
+```
+
+Cloud access requires your Pasqal account username and password, plus the project ID (project code) for the Pasqal project you will use. For a repository-local `.venv`, you can add them to its activation script:
+
+```bash
+nano .venv/bin/activate
+```
+
+Add these lines at the end of the file, replacing the placeholders with your account details and project ID:
+
+```bash
+export PASQAL_USERNAME="your-pasqal-username"
+export PASQAL_PASSWORD="your-pasqal-password"
+export PASQAL_PROJECT_ID="your-pasqal-project-id"
+```
+
+In nano, save with `Ctrl+O`, press `Enter`, and exit with `Ctrl+X`. Activate the environment (or deactivate and reactivate it if it is already active) so the variables are loaded:
+
+```bash
+source .venv/bin/activate
+```
+
+These values are stored as plain text in the activation script. Keep the file private and do not commit it; recreating the virtual environment also replaces this script. Local emulator runs do not require these credentials.
+
 ### Programmatic use
 
 ```python

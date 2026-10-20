@@ -40,6 +40,8 @@ results/
 !.env.example
 
 # Editor and operating-system files
-.vscode/*.code-workspace
+.vscode/
+.code-workspace
 .DS_Store
 Thumbs.db
+*.idea
